@@ -16,6 +16,9 @@ Run:
 from __future__ import annotations
 
 import csv
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 import queue
 import re
 import threading
@@ -809,27 +812,81 @@ class AutomationGUI:
             return
 
         path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            initialfile=f"export_{label.lower()}.txt",
-            filetypes=[("Text", "*.txt"), ("CSV", "*.csv"), ("All", "*.*")],
+            defaultextension=".xlsx",
+            initialfile=f"export_{label.lower()}.xlsx",
+            filetypes=[("Excel Workbook", "*.xlsx"), ("All", "*.*")],
             parent=self.root,
         )
         if not path:
             return
 
         try:
-            with open(path, "w", encoding="utf-8", newline="") as fh:
-                w = csv.writer(fh, delimiter="|")
-                w.writerow(ALL_COLUMNS)
-                for row in subset.values():
-                    w.writerow([row.get(c, "") for c in ALL_COLUMNS])
+            self._write_xlsx(path, list(subset.values()), label)
             messagebox.showinfo(
                 "Exported",
                 f"{len(subset)} row(s) saved to:\n{path}",
                 parent=self.root,
             )
-        except OSError as exc:
+        except Exception as exc:
             messagebox.showerror("Export Error", str(exc), parent=self.root)
+
+    # ── Excel writer ──────────────────────────────────────────────
+
+    def _write_xlsx(self, path: str, rows: list, sheet_name: str = "Results") -> None:
+        """Write rows to a formatted .xlsx file using openpyxl."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = sheet_name[:31]  # Excel sheet name limit
+
+        # ── Header row styling ────────────────────────────────────
+        hdr_fill = PatternFill("solid", fgColor="2E75B6")
+        hdr_font = Font(bold=True, color="FFFFFF", name="Segoe UI", size=10)
+        hdr_align = Alignment(horizontal="center", vertical="center")
+
+        # Status-row fill colours (match GUI tags)
+        _ROW_FILL = {
+            "✅": PatternFill("solid", fgColor="C8F7C5"),
+            "❌": PatternFill("solid", fgColor="FFFFFF"),
+            "⚠️": PatternFill("solid", fgColor="FFD6D6"),
+        }
+        _col_widths = {
+            "EMAIL":    32,
+            "PASSWORD": 20,
+            "STATUS":   14,
+            "EVIDENCE": 70,
+        }
+
+        for ci, col in enumerate(ALL_COLUMNS, start=1):
+            cell = ws.cell(row=1, column=ci, value=col)
+            cell.font      = hdr_font
+            cell.fill      = hdr_fill
+            cell.alignment = hdr_align
+            ws.column_dimensions[get_column_letter(ci)].width = _col_widths.get(col, 18)
+
+        ws.row_dimensions[1].height = 20
+        ws.freeze_panes = "A2"  # freeze header
+
+        # ── Data rows ─────────────────────────────────────────────
+        data_font  = Font(name="Segoe UI", size=9)
+        data_align = Alignment(vertical="center", wrap_text=False)
+
+        for ri, row in enumerate(rows, start=2):
+            status_val = row.get("STATUS", "")
+            row_fill   = next(
+                (fill for icon, fill in _ROW_FILL.items() if icon in status_val),
+                None,
+            )
+            for ci, col in enumerate(ALL_COLUMNS, start=1):
+                cell = ws.cell(row=ri, column=ci, value=row.get(col, ""))
+                cell.font      = data_font
+                cell.alignment = data_align
+                if row_fill:
+                    cell.fill = row_fill
+
+        # Auto-filter on header row
+        ws.auto_filter.ref = ws.dimensions
+
+        wb.save(path)
 
 
 # ═══════════════════════════════════════════════════════════════
