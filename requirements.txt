@@ -1,0 +1,6 @@
+# Runtime dependency for multilingual subject translation.
+# Falls back to case-insensitive comparison if not installed.
+deep-translator>=1.11.4
+
+# No additional third-party dependencies — imaplib, email, threading,
+# concurrent.futures are all part of the Python standard library.
